@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"miniflux.app/v2/internal/config"
+	"miniflux.app/v2/internal/crypto"
 	"miniflux.app/v2/internal/http/request"
 	"miniflux.app/v2/internal/http/response"
 	"miniflux.app/v2/internal/locale"
@@ -33,7 +34,20 @@ func (h *handler) oauth2Callback(w http.ResponseWriter, r *http.Request) {
 
 	sess := request.WebSession(r)
 
-	_ = sess
+	// Verify that the callback belongs to an authorization request started
+	// by this same browser session. The state is consumed in every case so
+	// it can never be replayed, including when validation fails.
+	providedState := request.QueryStringParam(r, "state", "")
+	expectedState := sess.ConsumeOAuth2State()
+	if providedState == "" || expectedState == "" || !crypto.ConstantTimeCmp(providedState, expectedState) {
+		slog.Warn("OAuth2 callback rejected: state parameter does not match the session",
+			slog.String("provider", provider),
+			slog.String("client_ip", request.ClientIP(r)),
+			slog.String("user_agent", r.UserAgent()),
+		)
+		response.HTMLBadRequest(w, r, errors.New("invalid or missing OAuth2 state"))
+		return
+	}
 
 	authProvider, err := getOAuth2Manager(r.Context()).FindProvider(provider)
 	if err != nil {

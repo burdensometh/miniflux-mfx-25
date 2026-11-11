@@ -42,6 +42,7 @@ type webSessionState struct {
 	LastForceRefreshAt *time.Time            `json:"last_force_refresh_at,omitempty"`
 	Language           string                `json:"language,omitempty"`
 	Theme              string                `json:"theme,omitempty"`
+	OAuth2State        string                `json:"oauth2_state,omitempty"`
 }
 
 // NewWebSession builds an unauthenticated browser session with a fresh
@@ -228,6 +229,25 @@ func (s *WebSession) MarkForceRefreshed() {
 func (s *WebSession) SetWebAuthn(data *webauthn.SessionData) {
 	s.dirty = true
 	s.state.WebAuthn = data
+}
+
+// SetOAuth2State stores the state parameter associated with an OAuth2
+// authorization request started by this session.
+func (s *WebSession) SetOAuth2State(state string) {
+	s.dirty = true
+	s.state.OAuth2State = state
+}
+
+// ConsumeOAuth2State returns and clears the pending OAuth2 state parameter,
+// so a callback can only be accepted for an authorization request that the
+// same browser session initiated. An empty string means no request is pending.
+func (s *WebSession) ConsumeOAuth2State() string {
+	state := s.state.OAuth2State
+	if state != "" {
+		s.dirty = true
+		s.state.OAuth2State = ""
+	}
+	return state
 }
 
 // MarshalState serializes the session state to JSON for storage.

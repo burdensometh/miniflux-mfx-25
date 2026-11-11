@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"miniflux.app/v2/internal/crypto"
 	"miniflux.app/v2/internal/http/request"
 	"miniflux.app/v2/internal/http/response"
 )
@@ -29,7 +30,14 @@ func (h *handler) oauth2Redirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authURL := authProvider.Config().AuthCodeURL("")
+	// Bind the authorization request to this browser session: the state is
+	// persisted in the session and must be presented unchanged by the
+	// provider callback, which prevents cross-session login CSRF (e.g. an
+	// attacker forcing a victim to link the attacker's identity).
+	state := crypto.GenerateRandomStringHex(16)
+	request.WebSession(r).SetOAuth2State(state)
+
+	authURL := authProvider.Config().AuthCodeURL(state)
 
 	response.HTMLRedirect(w, r, authURL)
 }

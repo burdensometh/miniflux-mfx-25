@@ -317,6 +317,50 @@ func TestWebSession_ConsumeWebAuthnSession(t *testing.T) {
 	})
 }
 
+func TestWebSession_ConsumeOAuth2State(t *testing.T) {
+	t.Run("no pending state", func(t *testing.T) {
+		session := &WebSession{}
+
+		if got := session.ConsumeOAuth2State(); got != "" {
+			t.Errorf("ConsumeOAuth2State() = %q, want empty", got)
+		}
+		if session.IsDirty() {
+			t.Error("ConsumeOAuth2State with no pending state must not mark the session dirty")
+		}
+	})
+
+	t.Run("stores and consumes once", func(t *testing.T) {
+		session, _ := NewWebSession("", "")
+		session.SetOAuth2State("random-state")
+		session.dirty = false // isolate the dirty contribution of ConsumeOAuth2State
+
+		if got := session.ConsumeOAuth2State(); got != "random-state" {
+			t.Errorf("ConsumeOAuth2State() = %q, want %q", got, "random-state")
+		}
+		if !session.IsDirty() {
+			t.Error("ConsumeOAuth2State with a pending state must mark the session dirty")
+		}
+
+		// The state is single-use: a second call returns nothing.
+		if got := session.ConsumeOAuth2State(); got != "" {
+			t.Errorf("second ConsumeOAuth2State() = %q, want empty", got)
+		}
+	})
+
+	t.Run("overwritten before consumption", func(t *testing.T) {
+		session, _ := NewWebSession("", "")
+		session.SetOAuth2State("first")
+		session.SetOAuth2State("second")
+
+		if got := session.ConsumeOAuth2State(); got != "second" {
+			t.Errorf("ConsumeOAuth2State() = %q, want %q", got, "second")
+		}
+		if got := session.ConsumeOAuth2State(); got != "" {
+			t.Errorf("second ConsumeOAuth2State() = %q, want empty", got)
+		}
+	})
+}
+
 func TestWebSession_MarkForceRefreshed(t *testing.T) {
 	session := &WebSession{}
 
@@ -343,6 +387,7 @@ func TestWebSession_StateRoundTrip(t *testing.T) {
 	original.SetSuccessMessage("saved")
 	original.SetErrorMessage("oops")
 	original.MarkForceRefreshed()
+	original.SetOAuth2State("pending-oauth2-state")
 	originalRefreshAt := original.LastForceRefresh()
 
 	data, err := original.MarshalState()
@@ -371,6 +416,10 @@ func TestWebSession_StateRoundTrip(t *testing.T) {
 	success, errMsg := restored.ConsumeMessages()
 	if success != "saved" || errMsg != "oops" {
 		t.Errorf("ConsumeMessages() = (%q, %q), want (%q, %q)", success, errMsg, "saved", "oops")
+	}
+
+	if got := restored.ConsumeOAuth2State(); got != "pending-oauth2-state" {
+		t.Errorf("ConsumeOAuth2State() = %q, want %q", got, "pending-oauth2-state")
 	}
 }
 
